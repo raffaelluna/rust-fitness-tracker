@@ -50,7 +50,7 @@ fn handle_update(update: frankenstein::Update, api: &Api) {
     if let UpdateContent::Message(message) = update.content {
         let text = message.text.clone().unwrap();
 
-        match text.split_once("\n") {
+        match text.split_once('\n') {
             Some((command_candidate, par)) => {
                 let command = Command::from_str(command_candidate).unwrap();
                 let msg_to_send = process(command, par);

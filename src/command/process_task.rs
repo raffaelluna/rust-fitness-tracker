@@ -1,8 +1,11 @@
+use dotenv::dotenv;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::convert::TryFrom;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Exercise {
     exercise_name: String,
     sets: i32,
@@ -10,6 +13,7 @@ pub struct Exercise {
     load: i32,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Workout {
     workout_date: String,
     workout_type: String,
@@ -34,10 +38,10 @@ impl std::fmt::Display for Exercise {
 }
 
 pub fn parse_workout_from_str(s: &str) -> Option<Workout> {
-    match s.split_once("\n") {
+    match s.split_once('\n') {
         Some((workout_metadata, exercises_str)) => {
             let workout_metadata = workout_metadata
-                .split(":")
+                .split(':')
                 .map(|s| s.to_string())
                 .take(3)
                 .collect::<Vec<_>>();
@@ -46,11 +50,10 @@ pub fn parse_workout_from_str(s: &str) -> Option<Workout> {
                 <[String; 3]>::try_from(workout_metadata).ok().unwrap();
 
             let exercises = exercises_str
-                .split("\n")
-                .map(|ex_str: &str| -> Option<Exercise> {
+                .split('\n')
+                .filter_map(|ex_str: &str| -> Option<Exercise> {
                     parse_exercise_from_str(ex_str).ok()
                 })
-                .flatten()
                 .collect::<Vec<_>>();
 
             Some(Workout {
@@ -69,7 +72,7 @@ pub fn parse_workout_from_str(s: &str) -> Option<Workout> {
 }
 
 pub fn parse_exercise_from_str(s: &str) -> Result<Exercise, ParseIntError> {
-    let mut exercise_data = s.split(":").take(4);
+    let mut exercise_data = s.split(':').take(4);
 
     let exercise_name = String::from(exercise_data.next().unwrap());
     let sets = exercise_data.next().unwrap().parse::<i32>()?;
@@ -129,12 +132,16 @@ fn new_workout(par: &str) -> String {
 
                 println!("{:?}", msg_to_send);
 
-                // if let Err(err) = load_workout_to_db(&workout, url):
-                //      let msg_to_send = format!("Could not load workout to database, please check and try again. Error: {}.", err)
-                //      return msg_to_send; // usar o early return ()
+                if let Err(err) = load_workout_to_db(&workout) {
+                    let msg_to_send = format!(
+                        "Could not load workout to database, please check and try again. Error: {}.", err
+                    );
+                    return msg_to_send;
+                }
                 //
-                // if let Some(last_workout) = get_last_workout(workout.workout_type, url):
+                // if let Some(last_workout) = get_last_workout(workout.workout_type) {
                 //      show_differences(&workout, last_workout);
+                // }
 
                 msg_to_send
             }
@@ -161,14 +168,33 @@ fn register_exercise(par: &str) -> String {
 
 // TODO
 fn validate_workout(workout: Workout) -> Result<Workout, ()> {
+    // ver se nao há dois treinos no mesmo dia
     Ok(workout)
 }
 
-#[allow(unused_variables)]
-fn load_workout_to_db(workout: &Workout, url: &str) -> Result<(), ()> {
-    // dotenv().ok()
-    // let url = std::env::var("DB_URL").expect("DB_URL must be set.");
-    // usar o operador ?
-    // implementar erro
-    Ok(())
+fn load_workout_to_db(workout: &Workout) -> Result<(), Box<ureq::Error>> {
+    dotenv().ok();
+    let api_url = std::env::var("API_URL").expect("API_URL must be set.");
+
+    match ureq::post(&api_url).send_json(json!(&workout)) {
+        Ok(response) => {
+            println!(
+                "Successfully sent the workout. Got response:\n{}",
+                response.into_string().unwrap()
+            );
+            Ok(())
+        }
+        Err(e) => Err(Box::new(e)),
+    }
+}
+
+#[allow(dead_code)]
+fn get_last_workout(workout_type: String) -> Option<Workout> {
+    dotenv().ok();
+    let api_url = std::env::var("API_URL").expect("API_URL must be set.");
+
+    match ureq::get(&api_url).send_string(workout_type.as_str()) {
+        Ok(response) => response.into_json::<Workout>().ok(),
+        Err(_) => None,
+    }
 }
