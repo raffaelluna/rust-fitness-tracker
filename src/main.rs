@@ -11,5 +11,5 @@ fn main() {
         std::env::var("BOT_API_TOKEN").expect("BOT_API_TOKEN must be set.");
 
     let telegram_bot = TelegramBot::new(token);
-    telegram_bot.start();
+    telegram_bot.run();
 }

@@ -24,7 +24,7 @@ impl TelegramBot {
         Self { telegram_api: api }
     }
 
-    pub fn start(&self) {
+    pub fn run(&self) {
         let update_params_builder = GetUpdatesParams::builder();
         let mut update_params = update_params_builder.clone().build();
 
