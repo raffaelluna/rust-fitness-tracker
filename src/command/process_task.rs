@@ -37,54 +37,68 @@ impl std::fmt::Display for Exercise {
     }
 }
 
-pub fn parse_workout_from_str(s: &str) -> Option<Workout> {
-    match s.split_once('\n') {
-        Some((workout_metadata, exercises_str)) => {
-            let workout_metadata = workout_metadata
-                .split(':')
-                .map(|s| s.to_string())
-                .take(3)
-                .collect::<Vec<_>>();
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseWorkoutError;
 
-            let [workout_date, workout_type, targeted_muscles] =
-                <[String; 3]>::try_from(workout_metadata).ok().unwrap();
+impl FromStr for Workout {
+    type Err = ParseWorkoutError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split_once('\n') {
+            Some((workout_metadata, exercises_str)) => {
+                let workout_metadata = workout_metadata
+                    .split(':')
+                    .map(|s| s.to_string())
+                    .take(3)
+                    .collect::<Vec<_>>();
 
-            let exercises = exercises_str
-                .split('\n')
-                .filter_map(|ex_str: &str| -> Option<Exercise> {
-                    parse_exercise_from_str(ex_str).ok()
+                let [workout_date, workout_type, targeted_muscles] =
+                    <[String; 3]>::try_from(workout_metadata).ok().unwrap();
+
+                let exercises = exercises_str
+                    .split('\n')
+                    .filter_map(|ex_str: &str| -> Option<Exercise> {
+                        ex_str.parse::<Exercise>().ok()
+                    })
+                    .collect::<Vec<_>>();
+
+                Ok(Self {
+                    workout_date,
+                    workout_type,
+                    targeted_muscles,
+                    exercises,
                 })
-                .collect::<Vec<_>>();
+            }
 
-            Some(Workout {
-                workout_date,
-                workout_type,
-                targeted_muscles,
-                exercises,
-            })
-        }
-
-        None => {
-            print!("Failed to parse workout. Please try again.");
-            None
+            None => {
+                print!("Failed to parse workout. Please try again.");
+                Err(ParseWorkoutError)
+            }
         }
     }
 }
 
-pub fn parse_exercise_from_str(s: &str) -> Result<Exercise, ParseIntError> {
-    let mut exercise_data = s.split(':').take(4);
+impl FromStr for Exercise {
+    type Err = ParseIntError;
 
-    let exercise_name = String::from(exercise_data.next().unwrap());
-    let sets = exercise_data.next().unwrap().parse::<i32>()?;
-    let repetitions = exercise_data.next().unwrap().parse::<i32>()?;
-    let load = exercise_data.next().unwrap().parse::<i32>()?;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut exercise_data = s.split(':').take(4);
 
-    Ok(Exercise {
-        exercise_name,
-        sets,
-        repetitions,
-        load,
-    })
+        let exercise_name = String::from(exercise_data.next().unwrap());
+
+        let [sets, repetitions, load] = <[i32; 3]>::try_from(
+            exercise_data
+                .filter_map(|s| s.parse::<i32>().ok())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        Ok(Exercise {
+            exercise_name,
+            sets,
+            repetitions,
+            load,
+        })
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -119,7 +133,7 @@ pub fn process(command: Command, par: &str) -> String {
 }
 
 fn new_workout(par: &str) -> String {
-    if let Some(workout) = parse_workout_from_str(par) {
+    if let Some(workout) = par.parse::<Workout>().ok() {
         match validate_workout(workout) {
             Ok(workout) => {
                 let msg_to_send = format!(
