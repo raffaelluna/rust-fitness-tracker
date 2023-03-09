@@ -133,7 +133,7 @@ pub fn process(command: Command, par: &str) -> String {
 }
 
 fn new_workout(par: &str) -> String {
-    if let Some(workout) = par.parse::<Workout>().ok() {
+    if let Ok(workout) = par.parse::<Workout>() {
         match validate_workout(workout) {
             Ok(workout) => {
                 let msg_to_send = format!(
