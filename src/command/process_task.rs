@@ -1,105 +1,10 @@
+use crate::command::error::ProcessorError;
+use crate::model::workout_model::Workout;
 use dotenv::dotenv;
-use serde::{Deserialize, Serialize};
+use frankenstein::Message;
+use frankenstein::{Api, Update, UpdateContent};
 use serde_json::json;
-use std::convert::TryFrom;
-use std::num::ParseIntError;
 use std::str::FromStr;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Exercise {
-    exercise_name: String,
-    sets: i32,
-    repetitions: i32,
-    load: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Workout {
-    workout_date: String,
-    workout_type: String,
-    targeted_muscles: String,
-    exercises: Vec<Exercise>,
-}
-
-impl Exercise {
-    pub fn total_workload(&self) -> i32 {
-        self.sets * self.repetitions * self.load
-    }
-}
-
-impl std::fmt::Display for Exercise {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: {}x{} with {} kgs.",
-            self.exercise_name, self.sets, self.repetitions, self.load
-        )
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParseWorkoutError;
-
-impl FromStr for Workout {
-    type Err = ParseWorkoutError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.split_once('\n') {
-            Some((workout_metadata, exercises_str)) => {
-                let workout_metadata = workout_metadata
-                    .split(':')
-                    .map(|s| s.to_string())
-                    .take(3)
-                    .collect::<Vec<_>>();
-
-                let [workout_date, workout_type, targeted_muscles] =
-                    <[String; 3]>::try_from(workout_metadata).ok().unwrap();
-
-                let exercises = exercises_str
-                    .split('\n')
-                    .filter_map(|ex_str: &str| -> Option<Exercise> {
-                        ex_str.parse::<Exercise>().ok()
-                    })
-                    .collect::<Vec<_>>();
-
-                Ok(Self {
-                    workout_date,
-                    workout_type,
-                    targeted_muscles,
-                    exercises,
-                })
-            }
-
-            None => {
-                print!("Failed to parse workout. Please try again.");
-                Err(ParseWorkoutError)
-            }
-        }
-    }
-}
-
-impl FromStr for Exercise {
-    type Err = ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut exercise_data = s.split(':').take(4);
-
-        let exercise_name = String::from(exercise_data.next().unwrap());
-
-        let [sets, repetitions, load] = <[i32; 3]>::try_from(
-            exercise_data
-                .filter_map(|s| s.parse::<i32>().ok())
-                .collect::<Vec<_>>(),
-        )
-        .unwrap();
-
-        Ok(Exercise {
-            exercise_name,
-            sets,
-            repetitions,
-            load,
-        })
-    }
-}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Command {
@@ -124,26 +29,53 @@ impl FromStr for Command {
     }
 }
 
-pub fn process(command: Command, par: &str) -> String {
-    match command {
-        Command::RegisterExercise => register_exercise(par),
-        Command::NewWorkout => new_workout(par),
-        _ => String::from("Please, make sure to send a valid command."),
+pub struct UpdateProcessor {
+    api: Api,
+    update: Update,
+    pub message: Message,
+    command: Command,
+    param: String,
+}
+
+impl UpdateProcessor {
+    pub fn new(api: Api, update: Update) -> Result<Self, ProcessorError> {
+        if let UpdateContent::Message(message) = update.content.clone() {
+            if message.text.is_none() {
+                println!("No message text found, please try again.");
+                return Err(ProcessorError::MessageError(message));
+            }
+
+            let text = message.text.clone().unwrap();
+
+            if let Some((command_candidate, param)) = text.split_once('\n') {
+                let command = Command::from_str(command_candidate).unwrap();
+                return Ok(Self {
+                    api,
+                    update,
+                    message,
+                    command,
+                    param: param.to_string(),
+                });
+            }
+            Err(ProcessorError::MessageError(message))
+        } else {
+            Err(ProcessorError::NoMessageError(()))
+        }
+    }
+    pub fn run(&self) -> String {
+        match self.command {
+            Command::RegisterExercise => register_exercise(self.param.clone()),
+            Command::NewWorkout => new_workout(self.param.clone()),
+            _ => String::from("Please, make sure to send a valid command."),
+        }
     }
 }
 
-fn new_workout(par: &str) -> String {
+fn new_workout(par: String) -> String {
     if let Ok(workout) = par.parse::<Workout>() {
         match validate_workout(workout) {
             Ok(workout) => {
-                let msg_to_send = format!(
-                    "Got a valid workout.\nWorkout date: {:?}\nWorkout type: {:?}\nTargeted muscles: {:?}\nExercises: {:?}",
-                    workout.workout_date,
-                    workout.workout_type,
-                    workout.targeted_muscles,
-                    workout.exercises
-                );
-
+                let msg_to_send = format!("{}", workout);
                 println!("{:?}", msg_to_send);
 
                 if let Err(err) = load_workout_to_db(&workout) {
@@ -176,7 +108,7 @@ fn new_workout(par: &str) -> String {
     }
 }
 
-fn register_exercise(par: &str) -> String {
+fn register_exercise(par: String) -> String {
     format!("Command: InsertExercise\nPar: {:?}", par)
 }
 

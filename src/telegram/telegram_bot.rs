@@ -1,18 +1,11 @@
-use crate::command::process_task::{process, Command};
+use crate::command::{error::ProcessorError, process_task::UpdateProcessor};
+use crate::telegram::error::ApiError;
+use frankenstein::Api;
 use frankenstein::GetUpdatesParams;
 use frankenstein::Message;
 use frankenstein::MethodResponse;
 use frankenstein::SendMessageParams;
 use frankenstein::TelegramApi;
-use frankenstein::{Api, UpdateContent};
-use std::str::FromStr;
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-enum ApiError {
-    #[error(transparent)]
-    FrankensteinError(#[from] frankenstein::Error),
-}
 
 pub struct TelegramBot {
     telegram_api: Api,
@@ -48,25 +41,19 @@ impl TelegramBot {
     }
 
     fn handle_update(&self, update: frankenstein::Update) {
-        if let UpdateContent::Message(message) = update.content {
-            let text = message.text.clone().unwrap();
-
-            match text.split_once('\n') {
-                Some((command_candidate, par)) => {
-                    let command =
-                        Command::from_str(command_candidate).unwrap();
-                    let msg_to_send = process(command, par);
-
-                    if let Err(err) = self.send_message_with_reply(
-                        message.chat.id,
-                        message.message_id,
-                        msg_to_send.as_str(),
-                    ) {
-                        println!("Failed to send message: {err:?}");
-                    }
+        match UpdateProcessor::new(self.telegram_api.clone(), update) {
+            Ok(processor) => {
+                let msg_to_send = processor.run();
+                if let Err(err) = self.send_message_with_reply(
+                    processor.message.chat.id,
+                    processor.message.message_id,
+                    msg_to_send.as_str(),
+                ) {
+                    println!("Failed to send message: {err:?}");
                 }
-
-                None => {
+            }
+            Err(err) => match err {
+                ProcessorError::MessageError(message) => {
                     println!("No command received.");
 
                     if let Err(err) = self.send_message_with_reply(
@@ -77,8 +64,10 @@ impl TelegramBot {
                         println!("Failed to send message: {err:?}");
                     }
                 }
-            }
-            println!("message: {:?}", text);
+                ProcessorError::NoMessageError(_) => {
+                    println!("No message received.")
+                }
+            },
         }
     }
 

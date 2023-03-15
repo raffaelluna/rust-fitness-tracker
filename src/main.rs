@@ -2,6 +2,7 @@ use crate::telegram::telegram_bot::TelegramBot;
 use dotenv::dotenv;
 
 pub mod command;
+pub mod model;
 pub mod telegram;
 
 fn main() {
