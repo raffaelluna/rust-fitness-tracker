@@ -1,3 +1,4 @@
+use crate::model::error::ParseWorkoutError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::num::ParseIntError;
@@ -74,9 +75,6 @@ impl std::fmt::Display for Workout {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParseWorkoutError;
-
 impl FromStr for Workout {
     type Err = ParseWorkoutError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -108,7 +106,7 @@ impl FromStr for Workout {
 
             None => {
                 print!("Failed to parse workout. Please try again.");
-                Err(ParseWorkoutError)
+                Err(ParseWorkoutError::WorkoutNotFoundError())
             }
         }
     }

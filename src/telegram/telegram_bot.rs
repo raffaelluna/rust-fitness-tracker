@@ -7,6 +7,7 @@ use frankenstein::MethodResponse;
 use frankenstein::SendMessageParams;
 use frankenstein::TelegramApi;
 
+#[derive(Debug, Clone)]
 pub struct TelegramBot {
     telegram_api: Api,
 }
@@ -43,7 +44,11 @@ impl TelegramBot {
     fn handle_update(&self, update: frankenstein::Update) {
         match UpdateProcessor::new(self.telegram_api.clone(), update) {
             Ok(processor) => {
-                let msg_to_send = processor.run();
+                let msg_to_send = processor.run().unwrap_or_else(|_| {
+                    "Could not execute the command. Please, try again."
+                        .to_string()
+                });
+
                 if let Err(err) = self.send_message_with_reply(
                     processor.message.chat.id,
                     processor.message.message_id,
@@ -63,6 +68,9 @@ impl TelegramBot {
                     ) {
                         println!("Failed to send message: {err:?}");
                     }
+                }
+                ProcessorError::InvalidCommandError(_) => {
+                    println!("Invalid command.")
                 }
                 ProcessorError::NoMessageError(_) => {
                     println!("No message received.")

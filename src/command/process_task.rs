@@ -29,6 +29,7 @@ impl FromStr for Command {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct UpdateProcessor {
     api: Api,
     update: Update,
@@ -62,11 +63,15 @@ impl UpdateProcessor {
             Err(ProcessorError::NoMessageError(()))
         }
     }
-    pub fn run(&self) -> String {
+    pub fn run(&self) -> Result<String, ProcessorError> {
         match self.command {
-            Command::RegisterExercise => register_exercise(self.param.clone()),
-            Command::NewWorkout => new_workout(self.param.clone()),
-            _ => String::from("Please, make sure to send a valid command."),
+            Command::RegisterExercise => {
+                Ok(register_exercise(self.param.clone()))
+            }
+            Command::NewWorkout => Ok(new_workout(self.param.clone())),
+            _ => Err(ProcessorError::InvalidCommandError(String::from(
+                "Please, make sure to send a valid command.",
+            ))),
         }
     }
 }
@@ -78,7 +83,14 @@ fn new_workout(par: String) -> String {
                 let msg_to_send = format!("{}", workout);
                 println!("{:?}", msg_to_send);
 
-                if let Err(err) = load_workout_to_db(&workout) {
+                let Ok(db_handler) = DBHandler::new() else {
+                    let msg_to_send = String::from(
+                        "Could not load workout to database, please check and try again."
+                    );
+                    return msg_to_send;
+                };
+
+                if let Err(err) = db_handler.load_workout_to_db(&workout) {
                     let msg_to_send = format!(
                         "Could not load workout to database, please check and try again. Error: {}.", err
                     );
@@ -118,29 +130,39 @@ fn validate_workout(workout: Workout) -> Result<Workout, ()> {
     Ok(workout)
 }
 
-fn load_workout_to_db(workout: &Workout) -> Result<(), Box<ureq::Error>> {
-    dotenv().ok();
-    let api_url = std::env::var("API_URL").expect("API_URL must be set.");
-
-    match ureq::post(&api_url).send_json(json!(&workout)) {
-        Ok(response) => {
-            println!(
-                "Successfully sent the workout. Got response:\n{}",
-                response.into_string().unwrap()
-            );
-            Ok(())
-        }
-        Err(e) => Err(Box::new(e)),
-    }
+#[derive(Debug, Clone)]
+pub struct DBHandler {
+    api_url: String,
 }
 
-#[allow(dead_code)]
-fn get_last_workout(workout_type: String) -> Option<Workout> {
-    dotenv().ok();
-    let api_url = std::env::var("API_URL").expect("API_URL must be set.");
+impl DBHandler {
+    fn new() -> Result<Self, ()> {
+        dotenv().ok();
+        let api_url = std::env::var("API_URL").expect("API_URL must be set.");
 
-    match ureq::get(&api_url).send_string(workout_type.as_str()) {
-        Ok(response) => response.into_json::<Workout>().ok(),
-        Err(_) => None,
+        Ok(Self { api_url })
+    }
+    fn load_workout_to_db(
+        &self,
+        workout: &Workout,
+    ) -> Result<(), Box<ureq::Error>> {
+        match ureq::post(&self.api_url).send_json(json!(&workout)) {
+            Ok(response) => {
+                println!(
+                    "Successfully sent the workout. Got response:\n{}",
+                    response.into_string().unwrap()
+                );
+                Ok(())
+            }
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+
+    #[allow(dead_code)]
+    fn get_last_workout(&self, workout_type: String) -> Option<Workout> {
+        match ureq::get(&self.api_url).send_string(workout_type.as_str()) {
+            Ok(response) => response.into_json::<Workout>().ok(),
+            Err(_) => None,
+        }
     }
 }

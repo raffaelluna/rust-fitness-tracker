@@ -7,4 +7,6 @@ pub enum ProcessorError {
     MessageError(Message),
     #[error("No message found.")]
     NoMessageError(()),
+    #[error("{0}")]
+    InvalidCommandError(String),
 }
